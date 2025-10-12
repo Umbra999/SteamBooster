@@ -14,23 +14,22 @@ namespace HexedBooster
 
         public readonly CustomObjects.SteamCredentials credentials;
 
-        private PlayHandler playHandler;
-        private PlaySessionHandler playSessionHandler;
+        private readonly PlayHandler playHandler;
 
         public SteamBot(CustomObjects.SteamCredentials cred)
         {
             credentials = cred;
 
-            client = new();
+            client = new SteamClient();
 
             CallbackManager manager = new(client);
 
             steamUser = client.GetHandler<SteamUser>();
 
-            playSessionHandler = new PlaySessionHandler();
+            var playSessionHandler1 = new PlaySessionHandler();
             playHandler = new PlayHandler(this);
 
-            client.AddHandler(playSessionHandler);
+            client.AddHandler(playSessionHandler1);
 
             manager.Subscribe<SteamClient.ConnectedCallback>(OnConnected);
             manager.Subscribe<SteamClient.DisconnectedCallback>(OnDisconnected);
@@ -50,13 +49,13 @@ namespace HexedBooster
             { IsBackground = true }.Start();
         }
 
-        private async void OnConnected(SteamClient.ConnectedCallback callback)
+        private void OnConnected(SteamClient.ConnectedCallback callback)
         {
             Logger.LogDebug($"Connected to Steam, logging in as {credentials.username}");
 
             if (authData == null)
             {
-                CredentialsAuthSession authSession = await client.Authentication.BeginAuthSessionViaCredentialsAsync(new AuthSessionDetails
+                CredentialsAuthSession authSession = client.Authentication.BeginAuthSessionViaCredentialsAsync(new AuthSessionDetails
                 {
                     Username = credentials.username,
                     Password = credentials.password,
@@ -66,9 +65,9 @@ namespace HexedBooster
                     DeviceFriendlyName = credentials.DeviceName,
                     Authenticator = new UserConsoleAuthenticator(),
                     WebsiteID = "Client",
-                });
+                }).Result;
 
-                authData = await authSession.PollingWaitForResultAsync();
+                authData = authSession.PollingWaitForResultAsync().Result;
             }
 
             steamUser.LogOn(new SteamUser.LogOnDetails

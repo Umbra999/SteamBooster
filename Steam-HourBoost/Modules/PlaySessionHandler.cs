@@ -6,15 +6,17 @@ namespace HexedBooster.Modules
 {
     internal class PlaySessionHandler : ClientMsgHandler
     {
-        public PlaySessionHandler() { }
-
         internal sealed class PlayingSessionStateCallback : CallbackMsg
         {
             internal readonly bool PlayingBlocked;
 
             internal PlayingSessionStateCallback(JobID jobID, CMsgClientPlayingSessionState msg)
             {
-                if (jobID == null || msg == null) Logger.LogError("PlayingSessionStateCallback received null parameters");
+                if (jobID == null || msg == null)
+                {
+                    Logger.LogError("PlayingSessionStateCallback received null parameters");
+                    return;
+                }
 
                 JobID = jobID;
                 PlayingBlocked = msg.playing_blocked;
@@ -23,8 +25,6 @@ namespace HexedBooster.Modules
 
         public override void HandleMsg(IPacketMsg packetMsg)
         {
-            if (packetMsg == null) return;
-
             switch (packetMsg.MsgType)
             {
                 case EMsg.ClientPlayingSessionState:

@@ -5,7 +5,7 @@ namespace HexedBooster
 {
     internal class Boot
     {
-        private static readonly List<SteamBot> Bots = new();
+        private static readonly List<SteamBot> Bots = [];
 
         public static void Main()
         {
@@ -13,7 +13,7 @@ namespace HexedBooster
 
             if (!File.Exists("Accounts.txt"))
             {
-                File.WriteAllText("Accounts.txt", JsonSerializer.Serialize(new CustomObjects.SteamCredentials[] { new CustomObjects.SteamCredentials() }, new JsonSerializerOptions() { WriteIndented = true }));
+                File.WriteAllText("Accounts.txt", JsonSerializer.Serialize(new[] { new CustomObjects.SteamCredentials() }, new JsonSerializerOptions { WriteIndented = true }));
                 return;
             }
 

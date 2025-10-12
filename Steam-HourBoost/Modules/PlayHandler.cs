@@ -3,16 +3,9 @@ using SteamKit2;
 
 namespace HexedBooster.Modules
 {
-    internal class PlayHandler
+    internal class PlayHandler(SteamBot instance)
     {
-        private readonly SteamBot Bot;
-
-        public bool isPlaying = false;
-
-        public PlayHandler(SteamBot instance) 
-        {
-            Bot = instance;
-        }
+        public bool isPlaying;
 
         public void SetGamesPlaying(bool state)
         {
@@ -24,7 +17,7 @@ namespace HexedBooster.Modules
 
             if (state)
             {
-                foreach (ulong game in Bot.credentials.Games)
+                foreach (ulong game in instance.credentials.Games)
                 {
                     gamesPlaying.Body.games_played.Add(new CMsgClientGamesPlayed.GamePlayed
                     {
@@ -33,7 +26,7 @@ namespace HexedBooster.Modules
                 }
             }
 
-            Bot.client.Send(gamesPlaying);
+            instance.client.Send(gamesPlaying);
         }
     }
 }
