@@ -13,13 +13,16 @@ namespace SteamBooster
         private static readonly Regex AppIdRegex = new(@"gamecards/(?<appid>\d+)(?:/|\?|&|$)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex DropsRegex = new(@"(?<drops>\d+)\s*card\s*drops?\s*remaining", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex PageRegex = new(@"[?&]p=(?<page>\d+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
+        private static readonly TimeSpan CallbackTick = TimeSpan.FromSeconds(1);
+        private static readonly TimeSpan ReconnectDelay = TimeSpan.FromMinutes(10);
         private static readonly TimeSpan DropPlayRestartDelay = TimeSpan.FromSeconds(5);
+
+        private static readonly Uri SteamCommunityUri = new("https://steamcommunity.com");
+        private static readonly Uri SteamStoreUri = new("https://store.steampowered.com");
 
         public readonly SteamClient client;
         public readonly SteamUser steamUser;
-
-        private AuthPollResult? authData;
-
         public readonly CustomObjects.SteamCredentials credentials;
 
         private readonly PlayHandler playHandler;
@@ -28,6 +31,7 @@ namespace SteamBooster
         private readonly CookieContainer cookieContainer;
         private readonly TimeSpan farmCheckInterval;
 
+        private AuthPollResult? authData;
         private CancellationTokenSource? farmLoopCts;
 
         private bool isLoggedOn;
@@ -36,20 +40,17 @@ namespace SteamBooster
         private ulong steamId64;
         private string? lastFarmStatus;
 
-        public SteamBot(CustomObjects.SteamCredentials cred)
+        public SteamBot(CustomObjects.SteamCredentials credentials)
         {
-            credentials = cred;
-
+            this.credentials = credentials;
             farmCheckInterval = TimeSpan.FromSeconds(Math.Clamp(credentials.FarmCheckIntervalSeconds, 15, 600));
 
             client = new SteamClient();
             manager = new CallbackManager(client);
             steamUser = client.GetHandler<SteamUser>() ?? throw new InvalidOperationException("SteamUser handler unavailable.");
 
-            PlaySessionHandler playSessionHandler = new();
             playHandler = new PlayHandler(this);
-
-            client.AddHandler(playSessionHandler);
+            client.AddHandler(new PlaySessionHandler());
 
             manager.Subscribe<SteamClient.ConnectedCallback>(OnConnected);
             manager.Subscribe<SteamClient.DisconnectedCallback>(OnDisconnected);
@@ -58,24 +59,33 @@ namespace SteamBooster
             manager.Subscribe<PlaySessionHandler.PlayingSessionStateCallback>(OnPlayingSession);
 
             cookieContainer = new CookieContainer();
+            httpClient = BuildHttpClient(cookieContainer);
 
-            HttpClientHandler httpClientHandler = new()
+            client.Connect();
+            StartCallbackPump();
+        }
+
+        private static HttpClient BuildHttpClient(CookieContainer cookies)
+        {
+            HttpClientHandler handler = new()
             {
                 AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
-                CookieContainer = cookieContainer,
+                CookieContainer = cookies,
                 UseCookies = true,
             };
 
-            httpClient = new HttpClient(httpClientHandler);
-            httpClient.DefaultRequestHeaders.UserAgent.ParseAdd("SteamBooster/2.2 (+https://steamcommunity.com)");
+            HttpClient client = new(handler);
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("SteamBooster/2.3 (+https://steamcommunity.com)");
+            return client;
+        }
 
-            client.Connect();
-
+        private void StartCallbackPump()
+        {
             new Thread(() =>
             {
                 while (true)
                 {
-                    manager.RunWaitCallbacks(TimeSpan.FromSeconds(1));
+                    manager.RunWaitCallbacks(CallbackTick);
                 }
             })
             { IsBackground = true }.Start();
@@ -85,22 +95,7 @@ namespace SteamBooster
         {
             Logger.LogDebug($"Connected to Steam, logging in as {credentials.Username}");
 
-            if (authData == null)
-            {
-                CredentialsAuthSession authSession = client.Authentication.BeginAuthSessionViaCredentialsAsync(new AuthSessionDetails
-                {
-                    Username = credentials.Username,
-                    Password = credentials.Password,
-                    IsPersistentSession = false,
-                    ClientOSType = EOSType.Win11,
-                    PlatformType = EAuthTokenPlatformType.k_EAuthTokenPlatformType_SteamClient,
-                    DeviceFriendlyName = credentials.DeviceName,
-                    Authenticator = new UserConsoleAuthenticator(),
-                    WebsiteID = "Client",
-                }).GetAwaiter().GetResult();
-
-                authData = authSession.PollingWaitForResultAsync().GetAwaiter().GetResult();
-            }
+            authData ??= Authenticate().GetAwaiter().GetResult();
 
             steamUser.LogOn(new SteamUser.LogOnDetails
             {
@@ -111,19 +106,33 @@ namespace SteamBooster
             });
         }
 
+        private async Task<AuthPollResult> Authenticate()
+        {
+            CredentialsAuthSession authSession = await client.Authentication.BeginAuthSessionViaCredentialsAsync(new AuthSessionDetails
+            {
+                Username = credentials.Username,
+                Password = credentials.Password,
+                IsPersistentSession = false,
+                ClientOSType = EOSType.Win11,
+                PlatformType = EAuthTokenPlatformType.k_EAuthTokenPlatformType_SteamClient,
+                DeviceFriendlyName = credentials.DeviceName,
+                Authenticator = new UserConsoleAuthenticator(),
+                WebsiteID = "Client",
+            });
+
+            return await authSession.PollingWaitForResultAsync();
+        }
+
         private void OnDisconnected(SteamClient.DisconnectedCallback callback)
         {
             Logger.LogError("Disconnected from Steam");
 
-            isLoggedOn = false;
-            hasCommunityAuthCookies = false;
-            lastFarmStatus = null;
-            StopFarmLoop();
+            ResetRuntimeState();
             playHandler.StopPlaying();
 
             Task.Run(async () =>
             {
-                await Task.Delay(TimeSpan.FromMinutes(10));
+                await Task.Delay(ReconnectDelay);
                 client.Connect();
             });
         }
@@ -147,46 +156,11 @@ namespace SteamBooster
             StartFarmLoop();
         }
 
-        private void ConfigureCommunityAuthCookies()
-        {
-            hasCommunityAuthCookies = false;
-
-            if (steamId64 == 0 || authData == null || string.IsNullOrWhiteSpace(authData.AccessToken))
-            {
-                Logger.LogWarning("No access token available for Steam Community web session; badge scan may use non-owner view.");
-                return;
-            }
-
-            try
-            {
-                string sessionId = Guid.NewGuid().ToString("N");
-                string loginSecure = Uri.EscapeDataString($"{steamId64}||{authData.AccessToken}");
-
-                cookieContainer.Add(new Uri("https://steamcommunity.com"), new Cookie("sessionid", sessionId, "/", ".steamcommunity.com"));
-                cookieContainer.Add(new Uri("https://steamcommunity.com"), new Cookie("steamRememberLogin", "true", "/", ".steamcommunity.com"));
-                cookieContainer.Add(new Uri("https://steamcommunity.com"), new Cookie("steamLoginSecure", loginSecure, "/", ".steamcommunity.com"));
-
-                cookieContainer.Add(new Uri("https://store.steampowered.com"), new Cookie("sessionid", sessionId, "/", ".steampowered.com"));
-                cookieContainer.Add(new Uri("https://store.steampowered.com"), new Cookie("steamRememberLogin", "true", "/", ".steampowered.com"));
-                cookieContainer.Add(new Uri("https://store.steampowered.com"), new Cookie("steamLoginSecure", loginSecure, "/", ".steampowered.com"));
-
-                hasCommunityAuthCookies = true;
-                Logger.LogDebug("Steam Community auth cookies initialized.");
-            }
-            catch (Exception ex)
-            {
-                Logger.LogWarning($"Failed to initialize Steam Community cookies: {ex.Message}");
-            }
-        }
-
         private void OnLoggedOff(SteamUser.LoggedOffCallback callback)
         {
             Logger.LogWarning($"Logged off account: {callback.Result}");
 
-            isLoggedOn = false;
-            hasCommunityAuthCookies = false;
-            lastFarmStatus = null;
-            StopFarmLoop();
+            ResetRuntimeState();
             playHandler.StopPlaying();
 
             if (callback.Result == EResult.LogonSessionReplaced || callback.Result == EResult.LoggedInElsewhere)
@@ -204,11 +178,55 @@ namespace SteamBooster
             {
                 playHandler.StopPlaying();
                 LogFarmStatus("Farm paused: account is currently in use.", Logger.LogWarning);
+                return;
             }
-            else if (!isPlayingBlocked)
+
+            if (!isPlayingBlocked)
             {
                 Logger.LogDebug("Account is available, farm loop can resume");
             }
+        }
+
+        private void ResetRuntimeState()
+        {
+            isLoggedOn = false;
+            hasCommunityAuthCookies = false;
+            lastFarmStatus = null;
+            StopFarmLoop();
+        }
+
+        private void ConfigureCommunityAuthCookies()
+        {
+            hasCommunityAuthCookies = false;
+
+            if (steamId64 == 0 || authData == null || string.IsNullOrWhiteSpace(authData.AccessToken))
+            {
+                Logger.LogWarning("No access token available for Steam Community web session; badge scan may use non-owner view.");
+                return;
+            }
+
+            try
+            {
+                string sessionId = Guid.NewGuid().ToString("N");
+                string loginSecure = Uri.EscapeDataString($"{steamId64}||{authData.AccessToken}");
+
+                SetAuthCookies(SteamCommunityUri, sessionId, loginSecure, ".steamcommunity.com");
+                SetAuthCookies(SteamStoreUri, sessionId, loginSecure, ".steampowered.com");
+
+                hasCommunityAuthCookies = true;
+                Logger.LogDebug("Steam Community auth cookies initialized.");
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"Failed to initialize Steam Community cookies: {ex.Message}");
+            }
+        }
+
+        private void SetAuthCookies(Uri baseUri, string sessionId, string loginSecure, string domain)
+        {
+            cookieContainer.Add(baseUri, new Cookie("sessionid", sessionId, "/", domain));
+            cookieContainer.Add(baseUri, new Cookie("steamRememberLogin", "true", "/", domain));
+            cookieContainer.Add(baseUri, new Cookie("steamLoginSecure", loginSecure, "/", domain));
         }
 
         private void StartFarmLoop()
@@ -216,7 +234,7 @@ namespace SteamBooster
             StopFarmLoop();
 
             farmLoopCts = new CancellationTokenSource();
-            Task.Run(() => FarmLoopAsync(farmLoopCts.Token));
+            _ = Task.Run(() => FarmLoopAsync(farmLoopCts.Token));
         }
 
         private void StopFarmLoop()
@@ -270,79 +288,80 @@ namespace SteamBooster
                 return;
             }
 
-            List<uint> gamesToPlay = [];
-            List<uint> dropGames = [];
-            List<uint> manualGames = credentials.Games
-                .Where(static game => game <= uint.MaxValue)
-                .Select(static game => (uint)game)
-                .Distinct()
-                .ToList();
-
-            string? diagnostic = null;
-
-            if (credentials.AutoFarmCardDrops)
-            {
-                (Dictionary<uint, int> dropsByAppId, string? dropDiagnostic) = await GetGamesWithCardDropsAsync(cancellationToken);
-                diagnostic = dropDiagnostic;
-
-                if (dropsByAppId.Count > 0)
-                {
-                    dropGames = dropsByAppId
-                        .OrderByDescending(static pair => pair.Value)
-                        .ThenBy(static pair => pair.Key)
-                        .Select(static pair => pair.Key)
-                        .ToList();
-                }
-            }
-
-            gamesToPlay.AddRange(dropGames);
-            gamesToPlay.AddRange(manualGames);
+            List<uint> manualGames = GetManualGames();
+            (List<uint> dropGames, string? diagnostic) = await GetDropGamesAsync(cancellationToken);
+            List<uint> gamesToPlay = [.. dropGames, .. manualGames];
             gamesToPlay = gamesToPlay.Distinct().ToList();
 
             if (gamesToPlay.Count > 0)
             {
-                if (dropGames.Count > 0)
-                {
-                    if (playHandler.IsPlaying)
-                    {
-                        playHandler.StopPlaying();
-                        await Task.Delay(DropPlayRestartDelay, cancellationToken);
-                    }
-
-                    playHandler.SetGamesPlaying(gamesToPlay);
-                }
-                else
-                {
-                    // For pure hour boosting we keep playing continuously.
-                    playHandler.SetGamesPlaying(gamesToPlay);
-                }
-
-                if (dropGames.Count > 0 && manualGames.Count > 0)
-                {
-                    LogFarmStatus($"Playing {gamesToPlay.Count} games (drops + manual hours, with drop refresh restart).", Logger.LogImportant);
-                }
-                else if (dropGames.Count > 0)
-                {
-                    LogFarmStatus($"Playing {dropGames.Count} drop games (with refresh restart).", Logger.LogImportant);
-                }
-                else
-                {
-                    LogFarmStatus($"Playing {manualGames.Count} manual hour games.", Logger.LogImportant);
-                }
-
+                await ApplyPlayStateAsync(gamesToPlay, dropGames.Count > 0, cancellationToken);
+                LogPlaySummary(gamesToPlay.Count, dropGames.Count, manualGames.Count);
                 return;
             }
 
             playHandler.StopPlaying();
+            LogFarmStatus(diagnostic ?? "No card drops or manual games configured for this account.", diagnostic != null ? Logger.LogWarning : Logger.LogSuccess);
+        }
 
-            if (!string.IsNullOrWhiteSpace(diagnostic))
+        private List<uint> GetManualGames()
+        {
+            return credentials.Games
+                .Where(static game => game <= uint.MaxValue)
+                .Select(static game => (uint)game)
+                .Distinct()
+                .ToList();
+        }
+
+        private async Task<(List<uint> DropGames, string? Diagnostic)> GetDropGamesAsync(CancellationToken cancellationToken)
+        {
+            if (!credentials.AutoFarmCardDrops)
             {
-                LogFarmStatus(diagnostic, Logger.LogWarning);
+                return ([], null);
             }
-            else
+
+            (Dictionary<uint, int> dropsByAppId, string? diagnostic) = await GetGamesWithCardDropsAsync(cancellationToken);
+
+            if (dropsByAppId.Count == 0)
             {
-                LogFarmStatus("No card drops or manual games configured for this account.", Logger.LogSuccess);
+                return ([], diagnostic);
             }
+
+            List<uint> ordered = dropsByAppId
+                .OrderByDescending(static pair => pair.Value)
+                .ThenBy(static pair => pair.Key)
+                .Select(static pair => pair.Key)
+                .ToList();
+
+            return (ordered, null);
+        }
+
+        private async Task ApplyPlayStateAsync(List<uint> gamesToPlay, bool hasDropGames, CancellationToken cancellationToken)
+        {
+            if (hasDropGames && playHandler.IsPlaying)
+            {
+                playHandler.StopPlaying();
+                await Task.Delay(DropPlayRestartDelay, cancellationToken);
+            }
+
+            playHandler.SetGamesPlaying(gamesToPlay);
+        }
+
+        private void LogPlaySummary(int totalGames, int dropGames, int manualGames)
+        {
+            if (dropGames > 0 && manualGames > 0)
+            {
+                LogFarmStatus($"Playing {totalGames} games (drops + manual hours, with drop refresh restart).", Logger.LogImportant);
+                return;
+            }
+
+            if (dropGames > 0)
+            {
+                LogFarmStatus($"Playing {dropGames} drop games (with refresh restart).", Logger.LogImportant);
+                return;
+            }
+
+            LogFarmStatus($"Playing {manualGames} manual hour games.", Logger.LogImportant);
         }
 
         private async Task<(Dictionary<uint, int> DropsByAppId, string? Diagnostic)> GetGamesWithCardDropsAsync(CancellationToken cancellationToken)
@@ -361,7 +380,6 @@ namespace SteamBooster
             MergeCardDrops(firstParse.DropsByAppId, result);
 
             int maxPage = GetMaxBadgePage(firstPage);
-
             for (int page = 2; page <= maxPage; page++)
             {
                 string pageContent = await FetchBadgePageAsync(page, cancellationToken);
@@ -427,15 +445,12 @@ namespace SteamBooster
         {
             foreach ((uint appId, int drops) in source)
             {
-                if (drops <= 0)
+                if (drops > 0)
                 {
-                    continue;
+                    target[appId] = drops;
                 }
-
-                target[appId] = drops;
             }
         }
-
 
         private async Task<string> FetchBadgePageAsync(int page, CancellationToken cancellationToken)
         {
@@ -528,13 +543,4 @@ namespace SteamBooster
         private sealed record ParseResult(Dictionary<uint, int> DropsByAppId, int BadgeRowCount, int DropPhraseCount, int LinkedDropCount);
     }
 }
-
-
-
-
-
-
-
-
-
 
