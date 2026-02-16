@@ -75,7 +75,7 @@ namespace SteamBooster
                     Password = "your_steam_password",
                     DeviceName = "SteamBooster",
                     AutoFarmCardDrops = true,
-                    FarmCheckIntervalSeconds = 90,
+                    FarmCheckIntervalSeconds = 180,
                     Games = [570],
                 },
             ];

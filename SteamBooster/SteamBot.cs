@@ -13,6 +13,7 @@ namespace SteamBooster
         private static readonly Regex AppIdRegex = new(@"gamecards/(?<appid>\d+)(?:/|\?|&|$)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex DropsRegex = new(@"(?<drops>\d+)\s*card\s*drops?\s*remaining", RegexOptions.Compiled | RegexOptions.IgnoreCase);
         private static readonly Regex PageRegex = new(@"[?&]p=(?<page>\d+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        private static readonly TimeSpan DropPlayRestartDelay = TimeSpan.FromSeconds(5);
 
         public readonly SteamClient client;
         public readonly SteamUser steamUser;
@@ -300,15 +301,29 @@ namespace SteamBooster
 
             if (gamesToPlay.Count > 0)
             {
-                playHandler.SetGamesPlaying(gamesToPlay);
+                if (dropGames.Count > 0)
+                {
+                    if (playHandler.IsPlaying)
+                    {
+                        playHandler.StopPlaying();
+                        await Task.Delay(DropPlayRestartDelay, cancellationToken);
+                    }
+
+                    playHandler.SetGamesPlaying(gamesToPlay);
+                }
+                else
+                {
+                    // For pure hour boosting we keep playing continuously.
+                    playHandler.SetGamesPlaying(gamesToPlay);
+                }
 
                 if (dropGames.Count > 0 && manualGames.Count > 0)
                 {
-                    LogFarmStatus($"Playing {gamesToPlay.Count} games (drops + manual hours).", Logger.LogImportant);
+                    LogFarmStatus($"Playing {gamesToPlay.Count} games (drops + manual hours, with drop refresh restart).", Logger.LogImportant);
                 }
                 else if (dropGames.Count > 0)
                 {
-                    LogFarmStatus($"Playing {dropGames.Count} drop games.", Logger.LogImportant);
+                    LogFarmStatus($"Playing {dropGames.Count} drop games (with refresh restart).", Logger.LogImportant);
                 }
                 else
                 {
@@ -513,6 +528,9 @@ namespace SteamBooster
         private sealed record ParseResult(Dictionary<uint, int> DropsByAppId, int BadgeRowCount, int DropPhraseCount, int LinkedDropCount);
     }
 }
+
+
+
 
 
 

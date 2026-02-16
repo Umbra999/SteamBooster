@@ -22,7 +22,7 @@ namespace SteamBooster.Wrappers
             public bool AutoFarmCardDrops { get; set; } = true;
 
             [JsonPropertyName("farmCheckIntervalSeconds")]
-            public int FarmCheckIntervalSeconds { get; set; } = 90;
+            public int FarmCheckIntervalSeconds { get; set; } = 180;
         }
     }
 }
