@@ -34,6 +34,5 @@ Steam account booster with automatic card-drop farming.
 ## Notes
 
 - Card-drop detection is based on your Steam badge pages (`?l=english`).
-- If your profile blocks badge visibility, drop detection may return no games.
 - `games` values are Steam app IDs.
 
