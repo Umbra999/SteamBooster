@@ -8,6 +8,8 @@
     <AnalysisLevel>latest</AnalysisLevel>
     <LangVersion>latest</LangVersion>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>SteamBooster</AssemblyName>
+    <RootNamespace>SteamBooster</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>

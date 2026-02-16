@@ -1,4 +1,4 @@
-namespace HexedBooster.Wrappers
+namespace SteamBooster.Wrappers
 {
     internal static class Logger
     {
@@ -22,3 +22,4 @@ namespace HexedBooster.Wrappers
         }
     }
 }
+

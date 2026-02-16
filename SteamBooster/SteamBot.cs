@@ -1,12 +1,12 @@
-using HexedBooster.Modules;
-using HexedBooster.Wrappers;
+using SteamBooster.Modules;
+using SteamBooster.Wrappers;
 using SteamKit2;
 using SteamKit2.Authentication;
 using SteamKit2.Internal;
 using System.Net;
 using System.Text.RegularExpressions;
 
-namespace HexedBooster
+namespace SteamBooster
 {
     internal sealed class SteamBot
     {
@@ -513,6 +513,7 @@ namespace HexedBooster
         private sealed record ParseResult(Dictionary<uint, int> DropsByAppId, int BadgeRowCount, int DropPhraseCount, int LinkedDropCount);
     }
 }
+
 
 
 

@@ -1,7 +1,7 @@
-using HexedBooster.Wrappers;
+using SteamBooster.Wrappers;
 using System.Text.Json;
 
-namespace HexedBooster
+namespace SteamBooster
 {
     internal static class Boot
     {
@@ -85,3 +85,4 @@ namespace HexedBooster
         }
     }
 }
+

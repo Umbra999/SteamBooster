@@ -1,8 +1,8 @@
-using HexedBooster.Wrappers;
+using SteamBooster.Wrappers;
 using SteamKit2;
 using SteamKit2.Internal;
 
-namespace HexedBooster.Modules
+namespace SteamBooster.Modules
 {
     internal sealed class PlaySessionHandler : ClientMsgHandler
     {
@@ -41,3 +41,4 @@ namespace HexedBooster.Modules
         }
     }
 }
+

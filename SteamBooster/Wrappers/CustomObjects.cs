@@ -1,6 +1,6 @@
 using System.Text.Json.Serialization;
 
-namespace HexedBooster.Wrappers
+namespace SteamBooster.Wrappers
 {
     internal static class CustomObjects
     {
@@ -26,3 +26,4 @@ namespace HexedBooster.Wrappers
         }
     }
 }
+

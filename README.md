@@ -12,7 +12,7 @@ Steam account booster with automatic card-drop farming.
 ## Setup
 
 1. Build and run once:
-   - `dotnet run --project Steam-HourBoost/HexedBooster.csproj`
+   - `dotnet run --project SteamBooster/SteamBooster.csproj`
 2. The app creates `Accounts.txt` if missing.
 3. Fill your credentials and settings, then run again.
 
@@ -36,3 +36,4 @@ Steam account booster with automatic card-drop farming.
 - Card-drop detection is based on your Steam badge pages (`?l=english`).
 - If your profile blocks badge visibility, drop detection may return no games.
 - `games` values are Steam app IDs.
+
