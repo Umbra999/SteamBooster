@@ -26,7 +26,6 @@ Steam account booster with automatic card-drop farming.
     "deviceName": "SteamBooster",
     "autoFarmCardDrops": true,
     "farmCheckIntervalSeconds": 60,
-    "playManualGamesWhenNoDrops": false,
     "games": [570]
   }
 ]
