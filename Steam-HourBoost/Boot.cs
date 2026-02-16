@@ -1,31 +1,87 @@
-﻿using HexedBooster.Wrappers;
+using HexedBooster.Wrappers;
 using System.Text.Json;
 
 namespace HexedBooster
 {
-    internal class Boot
+    internal static class Boot
     {
+        private const string AccountsFileName = "Accounts.txt";
+
+        private static readonly JsonSerializerOptions JsonOptions = new()
+        {
+            PropertyNameCaseInsensitive = true,
+            WriteIndented = true,
+        };
+
         private static readonly List<SteamBot> Bots = [];
 
-        public static void Main()
+        public static async Task Main()
         {
-            Console.Title = "Steam - HexedBooster";
+            Console.Title = "Steam - SteamBooster";
 
-            if (!File.Exists("Accounts.txt"))
+            CustomObjects.SteamCredentials[] accounts = await LoadAccountsAsync();
+
+            if (accounts.Length == 0)
             {
-                File.WriteAllText("Accounts.txt", JsonSerializer.Serialize(new[] { new CustomObjects.SteamCredentials() }, new JsonSerializerOptions { WriteIndented = true }));
+                Logger.LogWarning("No accounts configured. Fill Accounts.txt and restart.");
                 return;
             }
 
-            string AccountJson = File.ReadAllText("Accounts.txt");
-            CustomObjects.SteamCredentials[] Accounts = JsonSerializer.Deserialize<CustomObjects.SteamCredentials[]>(AccountJson);
-
-            foreach (CustomObjects.SteamCredentials credential in Accounts)
+            foreach (CustomObjects.SteamCredentials credentials in accounts)
             {
-                Bots.Add(new SteamBot(credential));
+                Bots.Add(new SteamBot(credentials));
             }
 
-            Thread.Sleep(-1);
+            await Task.Delay(Timeout.InfiniteTimeSpan);
+        }
+
+        private static async Task<CustomObjects.SteamCredentials[]> LoadAccountsAsync()
+        {
+            if (!File.Exists(AccountsFileName))
+            {
+                await WriteSampleAccountsAsync();
+                Logger.LogImportant("Created Accounts.txt template. Fill it and restart.");
+                return [];
+            }
+
+            string accountJson = await File.ReadAllTextAsync(AccountsFileName);
+
+            if (string.IsNullOrWhiteSpace(accountJson))
+            {
+                Logger.LogError("Accounts.txt is empty.");
+                return [];
+            }
+
+            CustomObjects.SteamCredentials[]? accounts = JsonSerializer.Deserialize<CustomObjects.SteamCredentials[]>(accountJson, JsonOptions);
+
+            if (accounts == null)
+            {
+                Logger.LogError("Failed to parse Accounts.txt.");
+                return [];
+            }
+
+            return accounts
+                .Where(static account => !string.IsNullOrWhiteSpace(account.Username) && !string.IsNullOrWhiteSpace(account.Password))
+                .ToArray();
+        }
+
+        private static Task WriteSampleAccountsAsync()
+        {
+            CustomObjects.SteamCredentials[] sample =
+            [
+                new CustomObjects.SteamCredentials
+                {
+                    Username = "your_steam_username",
+                    Password = "your_steam_password",
+                    DeviceName = "SteamBooster",
+                    AutoFarmCardDrops = true,
+                    FarmCheckIntervalSeconds = 90,
+                    Games = [570],
+                },
+            ];
+
+            string json = JsonSerializer.Serialize(sample, JsonOptions);
+            return File.WriteAllTextAsync(AccountsFileName, json);
         }
     }
 }

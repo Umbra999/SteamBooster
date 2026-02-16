@@ -1,23 +1,17 @@
-﻿using HexedBooster.Wrappers;
+using HexedBooster.Wrappers;
 using SteamKit2;
 using SteamKit2.Internal;
 
 namespace HexedBooster.Modules
 {
-    internal class PlaySessionHandler : ClientMsgHandler
+    internal sealed class PlaySessionHandler : ClientMsgHandler
     {
         internal sealed class PlayingSessionStateCallback : CallbackMsg
         {
-            internal readonly bool PlayingBlocked;
+            internal bool PlayingBlocked { get; }
 
             internal PlayingSessionStateCallback(JobID jobID, CMsgClientPlayingSessionState msg)
             {
-                if (jobID == null || msg == null)
-                {
-                    Logger.LogError("PlayingSessionStateCallback received null parameters");
-                    return;
-                }
-
                 JobID = jobID;
                 PlayingBlocked = msg.playing_blocked;
             }
@@ -25,19 +19,24 @@ namespace HexedBooster.Modules
 
         public override void HandleMsg(IPacketMsg packetMsg)
         {
-            switch (packetMsg.MsgType)
+            if (packetMsg.MsgType != EMsg.ClientPlayingSessionState)
             {
-                case EMsg.ClientPlayingSessionState:
-                    HandlePlayingSessionState(packetMsg);
-                    break;
+                return;
             }
+
+            HandlePlayingSessionState(packetMsg);
         }
 
         private void HandlePlayingSessionState(IPacketMsg packetMsg)
         {
-            if (packetMsg == null) return;
-
             ClientMsgProtobuf<CMsgClientPlayingSessionState> response = new(packetMsg);
+
+            if (response.Body == null)
+            {
+                Logger.LogError("Received empty playing session response.");
+                return;
+            }
+
             Client.PostCallback(new PlayingSessionStateCallback(packetMsg.TargetJobID, response.Body));
         }
     }

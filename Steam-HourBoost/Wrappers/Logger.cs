@@ -1,41 +1,24 @@
-﻿namespace HexedBooster.Wrappers
+namespace HexedBooster.Wrappers
 {
-    internal class Logger
+    internal static class Logger
     {
-        public static void Log(object obj)
-        {
-            Console.ForegroundColor = ConsoleColor.DarkCyan;
-            Console.WriteLine($"[{DateTime.Now.ToShortTimeString()}] [HexBooster] {obj}");
-        }
+        private static readonly Lock Gate = new();
 
-        public static void LogDebug(object obj)
-        {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            Console.WriteLine($"[{DateTime.Now.ToShortTimeString()}] [HexBooster] {obj}");
-        }
+        public static void Log(object obj) => Write(ConsoleColor.DarkCyan, obj);
+        public static void LogDebug(object obj) => Write(ConsoleColor.DarkGray, obj);
+        public static void LogImportant(object obj) => Write(ConsoleColor.DarkMagenta, obj);
+        public static void LogSuccess(object obj) => Write(ConsoleColor.DarkGreen, obj);
+        public static void LogError(object obj) => Write(ConsoleColor.Red, obj);
+        public static void LogWarning(object obj) => Write(ConsoleColor.DarkYellow, obj);
 
-        public static void LogImportant(object obj)
+        private static void Write(ConsoleColor color, object obj)
         {
-            Console.ForegroundColor = ConsoleColor.DarkMagenta;
-            Console.WriteLine($"[{DateTime.Now.ToShortTimeString()}] [HexBooster] {obj}");
-        }
-
-        public static void LogSuccess(object obj)
-        {
-            Console.ForegroundColor = ConsoleColor.DarkGreen;
-            Console.WriteLine($"[{DateTime.Now.ToShortTimeString()}] [HexBooster] {obj}");
-        }
-
-        public static void LogError(object obj)
-        {
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"[{DateTime.Now.ToShortTimeString()}] [HexBooster] {obj}");
-        }
-
-        public static void LogWarning(object obj)
-        {
-            Console.ForegroundColor = ConsoleColor.DarkYellow;
-            Console.WriteLine($"[{DateTime.Now.ToShortTimeString()}] [HexBooster] {obj}");
+            lock (Gate)
+            {
+                Console.ForegroundColor = color;
+                Console.WriteLine($"[{DateTime.Now:HH:mm:ss}] [SteamBooster] {obj}");
+                Console.ResetColor();
+            }
         }
     }
 }
