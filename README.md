@@ -5,9 +5,9 @@ Steam account booster with automatic card-drop farming.
 ## What It Does
 
 - Logs in to one or more Steam accounts from `Accounts.txt`.
-- Auto-detects games with card drops left and plays them one at a time.
+- Auto-detects games with card drops left and plays them.
 - Stops automatically when all card drops are claimed.
-- Optional fallback: play manually configured app IDs.
+- Play manually configured app IDs.
 
 ## Setup
 
