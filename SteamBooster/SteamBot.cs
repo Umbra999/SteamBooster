@@ -16,7 +16,6 @@ namespace SteamBooster
 
         private static readonly TimeSpan CallbackTick = TimeSpan.FromSeconds(1);
         private static readonly TimeSpan ReconnectDelay = TimeSpan.FromMinutes(10);
-        private static readonly TimeSpan DropPlayRestartDelay = TimeSpan.FromSeconds(5);
 
         private static readonly Uri SteamCommunityUri = new("https://steamcommunity.com");
         private static readonly Uri SteamStoreUri = new("https://store.steampowered.com");
@@ -295,7 +294,7 @@ namespace SteamBooster
 
             if (gamesToPlay.Count > 0)
             {
-                await ApplyPlayStateAsync(gamesToPlay, dropGames.Count > 0, cancellationToken);
+                ApplyPlayState(gamesToPlay);
                 LogPlaySummary(gamesToPlay.Count, dropGames.Count, manualGames.Count);
                 return;
             }
@@ -336,14 +335,8 @@ namespace SteamBooster
             return (ordered, null);
         }
 
-        private async Task ApplyPlayStateAsync(List<uint> gamesToPlay, bool hasDropGames, CancellationToken cancellationToken)
+        private void ApplyPlayState(List<uint> gamesToPlay)
         {
-            if (hasDropGames && playHandler.IsPlaying)
-            {
-                playHandler.StopPlaying();
-                await Task.Delay(DropPlayRestartDelay, cancellationToken);
-            }
-
             playHandler.SetGamesPlaying(gamesToPlay);
         }
 
@@ -351,13 +344,13 @@ namespace SteamBooster
         {
             if (dropGames > 0 && manualGames > 0)
             {
-                LogFarmStatus($"Playing {totalGames} games (drops + manual hours, with drop refresh restart).", Logger.LogImportant);
+                LogFarmStatus($"Playing {totalGames} games (drops + manual hours).", Logger.LogImportant);
                 return;
             }
 
             if (dropGames > 0)
             {
-                LogFarmStatus($"Playing {dropGames} drop games (with refresh restart).", Logger.LogImportant);
+                LogFarmStatus($"Playing {dropGames} drop games.", Logger.LogImportant);
                 return;
             }
 
@@ -543,4 +536,6 @@ namespace SteamBooster
         private sealed record ParseResult(Dictionary<uint, int> DropsByAppId, int BadgeRowCount, int DropPhraseCount, int LinkedDropCount);
     }
 }
+
+
 
